@@ -1,0 +1,20 @@
+
+# Ignore data files 
+files/
+output/ 
+compiled_csv/
+expression_csv/
+
+# Ignore GO term objects 
+notebooks/gene2go
+notebooks/go-basic.obo
+notebooks/.ipynb_checkpoints
+notebooks/__pycache__
+
+# Ignore none relevant analysis
+For_Maira/
+For_Tatyana/
+
+# Ignore misc 
+.ipynb_checkpoints
+__pycache__
