@@ -18,3 +18,9 @@ For_Tatyana/
 # Ignore misc 
 .ipynb_checkpoints
 __pycache__
+geLine/
+geLine_dash/
+geLine*/
+
+# KEEP this directory
+!/files/OR_FACS/
