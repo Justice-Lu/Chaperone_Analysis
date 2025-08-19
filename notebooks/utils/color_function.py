@@ -105,10 +105,10 @@ def distinct_colors(label_list=None, category='tab10', custom_color=None, random
     warm_colors = ['#fabebe', '#ffd8b1', '#fffac8', '#ffe119', '#ff7f00', '#e6194B']
     floral_colors = ['#bfef45', '#fabed4', '#aaffc3', '#ffd8b1', '#dcbeff', '#a9a9a9']
     rainbow_colors = ['#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4']
-    pastel_colors = ['#A6CEE3', '#1F78B4', '#B2DF8A', '#33A02C', '#FB9A99', '#E31A1C', 
-                     '#FDBF6F', '#FF7F00', '#CAB2D6', '#6A3D9A', '#FFFF99', '#B15928', 
-                     '#8DD3C7', '#BEBADA', '#FFED6F']
-    
+    pastel_colors = ['#A6CEE3','#B2DF8A','#FB9A99','#FDBF6F','#CAB2D6',
+                    #  '#FFFF99',
+                     '#8DD3C7','#BEBADA','#FFED6F','#1F78B4','#33A02C','#E31A1C',
+                     '#FF7F00','#6A3D9A','#B15928']
     # Determine the number of colors needed
     if label_list is not None:
         required_colors = len(label_list)
@@ -140,11 +140,19 @@ def distinct_colors(label_list=None, category='tab10', custom_color=None, random
             # Try to use matplotlib colormap
             try:
                 cmap = cm.get_cmap(category)
-                base_palette = [mcolors.to_hex(cmap(i)) for i in np.linspace(0, 1, min(required_colors, 20))]
+                default_colors = cmap.colors if hasattr(cmap, 'colors') else [cmap(i) for i in range(cmap.N)]
+                if required_colors <= len(default_colors):
+                    base_palette = [mcolors.to_hex(c) for c in default_colors[:required_colors]]
+                else:
+                    base_palette = [mcolors.to_hex(cmap(i)) for i in np.linspace(0, 1, required_colors)]
             except (ValueError, AttributeError):
                 # Fallback to tab10 if the specified category is not available
-                cmap = cm.get_cmap('tab10')
-                base_palette = [mcolors.to_hex(cmap(i)) for i in np.linspace(0, 1, min(required_colors, 10))]
+                fallback_cmap = cm.get_cmap('tab10')
+                default_colors = fallback_cmap.colors if hasattr(fallback_cmap, 'colors') else [fallback_cmap(i) for i in range(fallback_cmap.N)]
+                if required_colors <= len(default_colors):
+                    base_palette = [mcolors.to_hex(c) for c in default_colors[:required_colors]]
+                else:
+                    base_palette = [mcolors.to_hex(fallback_cmap(i)) for i in np.linspace(0, 1, required_colors)]
         
         # If category wasn't 'random', ensure we have enough unique colors
         if category != 'random':
@@ -190,9 +198,6 @@ def distinct_colors(label_list=None, category='tab10', custom_color=None, random
             return color_palette
         else:
             return {label: color_palette[i] for i, label in enumerate(label_list)}
-
-from plotly.validators.scatter.marker import SymbolValidator
-import random
 
 from plotly.validators.scatter.marker import SymbolValidator
 import random

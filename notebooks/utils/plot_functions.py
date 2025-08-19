@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go 
 import matplotlib.pyplot as plt
 from scipy.stats import pearsonr, linregress
+from matplotlib.colors import LogNorm
 
 import utils.color_function as cf 
 
@@ -509,69 +510,282 @@ def plot_correlation(df, x_by, y_by,
     return fig
 
 
-def plt_correlation(values1, values2,
-                     xlabel='', 
-                     ylabel='',
-                     title='', 
-                     plot_pearson_line=True, 
-                     linestyle='dotted',
-                     linecolor='black',
-                     edgecolor='gray',
-                     edgesize=10, 
-                     opacity=0.5, 
-                     text_xy=[0.05, 0.95], 
-                     figsize=[8,8]):
-    """
-    Creates a scatter plot with a line of best fit and Pearson correlation annotation.
 
-    :param values1: Array-like, the first set of values (e.g., Grantham distances).
-    :param values2: Array-like, the second set of values (e.g., response correlations).
-    :param xlabel: String, label for the x-axis.
-    :param ylabel: String, label for the y-axis.
-    :param title: String, title of the plot.
-    :return: None, displays the plot.
+def plt_correlation(values1, values2,
+                    xlabel='', 
+                    ylabel='',
+                    title='', 
+                    plot_pearson_line=True, 
+                    linestyle='dotted',
+                    linecolor='Red',
+                    linewidth=3, 
+                    linealpha=0.5,
+                    edgecolor='gray',
+                    edgesize=10, 
+                    opacity=0.5, 
+                    text_xy=[0.05, 0.95], 
+                    figsize=[5, 5],
+                    colorbar=False, 
+                    plot_style='scatter',  # 'scatter', 'hexbin', or 'hist2d'
+                    bins=100, cmap='Greys', 
+                    log_scale=True, 
+                    spines=False, 
+                    **kwargs):
     """
-    # Ensure inputs are numpy arrays for consistency
+    Generate a correlation plot between two sets of values using various 2D plotting styles.
+
+    The function supports scatter, hexbin, and 2D histogram visualizations. It also computes
+    and optionally plots the Pearson correlation line, along with annotation of the correlation
+    coefficient (r), r², and p-value.
+
+    Parameters:
+        values1 (array-like): Values to be plotted on the x-axis.
+        values2 (array-like): Values to be plotted on the y-axis.
+        xlabel (str): Label for the x-axis.
+        ylabel (str): Label for the y-axis.
+        title (str): Title of the plot.
+        plot_pearson_line (bool): Whether to plot the Pearson correlation line and stats.
+        linestyle (str): Line style for the Pearson correlation line.
+        linecolor (str): Color of the Pearson correlation line.
+        edgecolor (str): Marker color for scatter plot points.
+        edgesize (float): Marker size for scatter plot points.
+        opacity (float): Transparency for scatter plot markers.
+        text_xy (list): (x, y) relative axes coordinates for placing the correlation text box.
+        figsize (list): Size of the figure in inches [width, height].
+        colorbar (bool): Whether to display a colorbar for hexbin or hist2d plots.
+        plot_style (str): One of 'scatter', 'hexbin', or 'hist2d'.
+        bins (int): Number of bins for hexbin or hist2d plots.
+        cmap (str): Colormap used for hexbin or hist2d plots.
+        log_scale (bool): Whether to apply logarithmic normalization to the color scale.
+
+    Returns:
+        matplotlib.figure.Figure: The matplotlib Figure object containing the plot.
+    """
+
     values1 = np.array(values1)
     values2 = np.array(values2)
 
-    # Calculate Pearson correlation and p-value
+    # Compute Pearson stats
     r, p_value = pearsonr(values1, values2)
-
-    # Calculate the line of best fit
     slope, intercept, _, _, _ = linregress(values1, values2)
 
-    # Create the scatter plot
-    plt.figure(figsize=(figsize[0], figsize[1]))
-    plt.scatter(values1, values2, color=edgecolor, alpha=opacity, s=edgesize)
-    
-    # Add labels, title, and grid
-    plt.xlabel(xlabel, fontsize=12)
-    plt.ylabel(ylabel, fontsize=12)
-    plt.title(title, fontsize=14)
+    # Create OO figure
+    fig, ax = plt.subplots(figsize=figsize)
+    norm = LogNorm() if log_scale else None
 
-    # Add text annotation for Pearson correlation, r^2, and p-value
+    if plot_style == 'scatter':
+        ax.scatter(values1, values2, color=edgecolor, alpha=opacity, s=edgesize)
+        
+    elif plot_style == 'scatter_line': 
+        smooth = kwargs.get('smooth_scatter_line', False)
+        if smooth:
+            degree = kwargs.get('poly_degree', 1)
+            coeffs = np.polyfit(values1, values2, deg=degree)
+            poly = np.poly1d(coeffs)
 
-    if plot_pearson_line: 
-        sorted_idx = np.argsort(values1)  # Get indices that would sort values1
-        sorted_x = values1[sorted_idx]    # Sort values1
-        sorted_y = (slope * sorted_x + intercept)  # Compute y-values for sorted x
+            x_fit = np.linspace(np.min(values1), np.max(values1), 500)
+            y_fit = poly(x_fit)
+            ax.plot(x_fit, y_fit, color=edgecolor, alpha=opacity, linewidth=edgesize)
+        else:
+            ax.plot(values1, values2, color=edgecolor, alpha=opacity, linewidth=edgesize)
+    elif plot_style == 'hexbin':
+        hb = ax.hexbin(values1, values2, gridsize=bins, cmap=cmap, norm=norm, mincnt=1)
+        if colorbar:
+            cb = fig.colorbar(hb, ax=ax)
+            cb.set_label('Counts (log)' if log_scale else 'Counts')
 
-        plt.plot(sorted_x, sorted_y, color=linecolor, linestyle=linestyle, label="Pearson Line", alpha=0.6)
-        plt.text(
-            text_xy[0], text_xy[1],  # Adjust position as needed
+    elif plot_style == 'hist2d':
+        counts, xedges, yedges, img = ax.hist2d(values1, values2, bins=bins, cmap=cmap, norm=norm)
+        if colorbar:
+            cb = fig.colorbar(img, ax=ax)
+            cb.set_label('Counts (log)' if log_scale else 'Counts')
+
+    else:
+        raise ValueError(f"plot_style must be one of ['scatter', 'hexbin', 'hist2d'], got '{plot_style}'.")
+
+    # Labels and title
+    ax.set_xlabel(xlabel, fontsize=12)
+    ax.set_ylabel(ylabel, fontsize=12)
+    ax.set_title(title, fontsize=14)
+
+    # Regression line and annotation
+    if plot_pearson_line:
+        sorted_idx = np.argsort(values1)
+        sorted_x = values1[sorted_idx]
+        sorted_y = slope * sorted_x + intercept
+
+        ax.plot(sorted_x, sorted_y, color=linecolor, 
+                linestyle=linestyle, linewidth=linewidth, 
+                alpha=linealpha)
+
+        ax.text(
+            text_xy[0], text_xy[1],
             f"Pearson r = {r:.3f}\n$r^2$ = {r**2:.3f}\np-value = {p_value:.3e}",
-            fontsize=12,
+            fontsize=kwargs.get('pearson_fontsize', 5),
             ha="left", va="top",
-            transform=plt.gca().transAxes,
-            bbox=dict(boxstyle="round,pad=0.3", edgecolor="gray", facecolor="white", alpha=0.5),
+            transform=ax.transAxes,
+            bbox=dict(boxstyle="round,pad=0.3", 
+                      edgecolor="white", 
+                      facecolor="white", alpha=0),
         )
 
-    # Add tight layout
-    plt.tight_layout()
+    fig.tight_layout()
+    
+    if not spines: 
+        fig = plt_clean_axes(fig)
+        
+    return fig, ax 
 
-    # Show the plot
-    return plt
+def plt_correlation_subplots(values_pairs,
+                    ax = None, 
+                    ncols=1,
+                    xlabels='', 
+                    ylabels='',
+                    titles='', 
+                    plot_pearson_line=True, 
+                    linestyle='dotted',
+                    linecolor='black',
+                    linewidth=3, 
+                    linealpha=0.5,
+                    edgecolor='gray',
+                    edgesize=10, 
+                    opacity=0.5, 
+                    text_xy=[0.05, 0.95], 
+                    figsize_per_plot=(4,4),
+                    # figsize=[8, 8],
+                    colorbar=False, 
+                    plot_style='scatter',  # 'scatter', 'hexbin', or 'hist2d'
+                    bins=100, cmap='Greys', 
+                    log_scale=True, 
+                    spines=False,
+                    **kwargs):
+    """
+    Generate a correlation plot between two sets of values using various 2D plotting styles.
+
+    The function supports scatter, hexbin, and 2D histogram visualizations. It also computes
+    and optionally plots the Pearson correlation line, along with annotation of the correlation
+    coefficient (r), r², and p-value.
+
+    Parameters:
+        values1 (array-like): Values to be plotted on the x-axis.
+        values2 (array-like): Values to be plotted on the y-axis.
+        xlabel (str): Label for the x-axis.
+        ylabel (str): Label for the y-axis.
+        title (str): Title of the plot.
+        plot_pearson_line (bool): Whether to plot the Pearson correlation line and stats.
+        linestyle (str): Line style for the Pearson correlation line.
+        linecolor (str): Color of the Pearson correlation line.
+        edgecolor (str): Marker color for scatter plot points.
+        edgesize (float): Marker size for scatter plot points.
+        opacity (float): Transparency for scatter plot markers.
+        text_xy (list): (x, y) relative axes coordinates for placing the correlation text box.
+        figsize (list): Size of the figure in inches [width, height].
+        colorbar (bool): Whether to display a colorbar for hexbin or hist2d plots.
+        plot_style (str): One of 'scatter', 'hexbin', or 'hist2d'.
+        bins (int): Number of bins for hexbin or hist2d plots.
+        cmap (str): Colormap used for hexbin or hist2d plots.
+        log_scale (bool): Whether to apply logarithmic normalization to the color scale.
+
+    Returns:
+        matplotlib.figure.Figure: The matplotlib Figure object containing the plot.
+    """
+
+    n = len(values_pairs)
+    nrows = int(np.ceil(n / ncols))
+    figsize = (figsize_per_plot[0] * ncols, figsize_per_plot[1] * nrows)
+
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize)
+    axes = np.array(axes).reshape(-1)
+    
+    
+    for i, (values1, values2) in enumerate(values_pairs):
+        ax = axes[i]
+        values1 = np.array(values1)
+        values2 = np.array(values2)
+
+        # Pearson
+        r, p_value = pearsonr(values1, values2)
+        slope, intercept, *_ = linregress(values1, values2)
+
+        # Plot style
+        style = kwargs.get('plot_style', plot_style)
+        norm = LogNorm() if kwargs.get('log_scale', log_scale) else None
+
+        if style == 'scatter':
+            ax.scatter(values1, values2,
+                       color=kwargs.get('edgecolor', edgecolor),
+                       alpha=kwargs.get('opacity', opacity),
+                       s=kwargs.get('edgesize', edgesize))
+        elif style == 'hexbin':
+            hb = ax.hexbin(values1, values2, gridsize=kwargs.get('bins', bins),
+                           cmap=kwargs.get('cmap', cmap), norm=norm, mincnt=1)
+            if kwargs.get('colorbar', colorbar):
+                fig.colorbar(hb, ax=ax)
+        elif style == 'hist2d':
+            counts, xedges, yedges, img = ax.hist2d(values1, values2, bins=kwargs.get('bins', bins),
+                                                    cmap=kwargs.get('cmap', cmap), norm=norm)
+            if kwargs.get('colorbar', colorbar):
+                fig.colorbar(img, ax=ax)
+        else:
+            raise ValueError("Invalid plot_style")
+
+        if kwargs.get('plot_pearson_line', plot_pearson_line):
+            sorted_idx = np.argsort(values1)
+            ax.plot(values1[sorted_idx],
+                    slope * values1[sorted_idx] + intercept,
+                    color=kwargs.get('linecolor', linecolor),
+                    linestyle=kwargs.get('linestyle', linestyle),
+                    linewidth=kwargs.get('linewidth', linewidth),
+                    alpha=kwargs.get('linealpha', linealpha))
+            tx, ty = kwargs.get('text_xy', text_xy)
+            ax.text(tx, ty,
+                    f"Pearson r = {r:.3f}\n$r^2$ = {r**2:.3f}\np = {p_value:.1e}",
+                    fontsize=kwargs.get('pearson_fontsize', 5),
+                    ha='left', va='top',
+                    transform=ax.transAxes,
+                    bbox=dict(boxstyle="round,pad=0.3",
+                              edgecolor="white",
+                              facecolor="white", alpha=0))
+
+        # Labels
+        if xlabels: ax.set_xlabel(xlabels[i])
+        if ylabels: ax.set_ylabel(ylabels[i])
+        if titles:  ax.set_title(titles[i])
+
+        if not kwargs.get('spines', spines):
+            fig = plt_clean_axes(fig)
+
+    # Hide unused axes
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+
+    fig.tight_layout()
+    return fig, axes[:n]
+
+
+def plt_clean_axes(fig, remove_spines=True, spine_color='black', tick_direction='out'):
+    """
+    Applies consistent styling to all axes in the figure.
+
+    Parameters:
+        fig: matplotlib Figure object
+        remove_spines: bool, if True, hides top and right spines
+        spine_color: str, color to apply to visible spines
+        tick_direction: str, direction of ticks ('in', 'out', 'inout')
+    """
+    for ax in fig.axes:
+        if remove_spines:
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+        
+        for spine in ['bottom', 'left']:
+            ax.spines[spine].set_color(spine_color)
+        
+        ax.tick_params(direction=tick_direction, colors=spine_color)
+
+        # Optional: remove grid or background
+        ax.set_facecolor('white')
+    return fig
 
 
 # def plot_weblogo(frequency_matrix, 

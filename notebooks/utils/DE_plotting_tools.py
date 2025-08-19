@@ -5,7 +5,6 @@ import numpy as np
 import plotly.express as px 
 import plotly.graph_objects as go
 
-import umap
 from sklearn.decomposition import PCA
 from scipy import stats
 
@@ -83,6 +82,8 @@ def reduced_dimension_plot(count_df: pd.DataFrame(),
                            reduction_method = 'umap',
                            pca_n_components = 2):
     
+    import umap
+    
     assert (reduction_method == 'umap') | (reduction_method == 'pca'), print('reduction_method needs to be either \'pca\' or \'umap\'')
     
     if reduction_method.lower() == 'pca':
@@ -114,13 +115,18 @@ def reduced_dimension_plot(count_df: pd.DataFrame(),
     )
     
     return fig
-
 def add_p_value_annotation(fig, 
                            array_columns, 
                            just_annotate = None,
                            test_type = 'ranksums', 
+                           popmean = None, 
                            y_padding = True, 
                            subplot=None, 
+                           include_tstat=None, 
+                           p_round=3,
+                           font_size=14, 
+                           show=None, 
+                           select_datatype=None,
                            _format=dict(interline=0.07, text_height=1.07, color='black')):
     ''' Adds notations giving the p-value between two box plot data (t-test two-sided comparison)
     
@@ -142,108 +148,78 @@ def add_p_value_annotation(fig,
         figure with the added notation
     '''
     
-    assert test_type in ['ranksums', 'ttest_ind', 'ttest_rel'] , "Please specify test_type to be either ranksums or ttest"
+    assert test_type in ['ranksums', 'ttest_ind', 'ttest_rel', 'ttest_1samp'], \
+        "Please specify test_type to be either ranksums or ttest"
+    if test_type == 'ttest_1samp': 
+        assert popmean is not None, "ttest_1samp requires popmean value"
     
     if just_annotate is not None: 
         assert len(just_annotate) == len(array_columns), "'just_annotate' and 'array_columns' len must be identical "
-    
-    # Specify in what y_range to plot for each pair of columns
-    y_range = np.zeros([len(array_columns), 2])
-    if y_padding:
-        for i in range(len(array_columns)):
-            y_range[i] = [1.01+i*_format['interline'], 1.02+i*_format['interline']]
-    else: 
-        for i in range(len(array_columns)):
-            y_range[i] = [1.01+_format['interline'], 1.02+_format['interline']]
 
-    # Get values from figure
-    fig_dict = fig.to_dict()
 
-    # Get indices if working with subplots
+    # Filter data for subplots
     if subplot:
-        if subplot == 1:
-            subplot_str = ''
-        else:
-            subplot_str =str(subplot)
-        indices = [] #Change the box index to the indices of the data for that subplot
-        for index, data in enumerate(fig_dict['data']):
-            #print(index, data['xaxis'], 'x' + subplot_str)
-            if data['xaxis'] == 'x' + subplot_str:
-                indices = np.append(indices, index)
-        indices = [int(i) for i in indices]
-        print((indices))
+        subplot_str = '' if subplot == 1 else str(subplot)
+        selected_data = [
+            (i, data) for i, data in enumerate(fig.data) 
+            if data['xaxis'] == 'x' + subplot_str
+        ]
     else:
         subplot_str = ''
+        selected_data = list(enumerate(fig.data))
 
-    # Print the p-values
-    for index, column_pair in enumerate(array_columns):
-        if subplot:
-            data_pair = [indices[column_pair[0]], indices[column_pair[1]]]
-        else:
-            data_pair = column_pair
+    # Filter by datatype if specified
+    if select_datatype:
+        selected_data = [(i, d) for i, d in selected_data if d['type'] == select_datatype]
+    
+    # Extract only y-data and indices after filtering
+    filtered_indices = [i for i, _ in selected_data]
+    filtered_y_data = [d['y'] for _, d in selected_data]
 
-        # Mare sure it is selecting the data and subplot you want
-        #print('0:', fig_dict['data'][data_pair[0]]['name'], fig_dict['data'][data_pair[0]]['xaxis'])
-        #print('1:', fig_dict['data'][data_pair[1]]['name'], fig_dict['data'][data_pair[1]]['xaxis'])
+    # Prepare annotation y-positions
+    y_range = np.zeros([len(array_columns), 2])
+    for i in range(len(array_columns)):
+        base = 1.01 + (i * _format['interline'] if y_padding else _format['interline'])
+        y_range[i] = [base, base + 0.01]
 
-        # Get the p-value
-        if test_type == 'ttest_ind': 
-            pvalue = stats.ttest_ind(
-                fig_dict['data'][data_pair[0]]['y'],
-                fig_dict['data'][data_pair[1]]['y'],
-                equal_var=False,
-            )[1]
+    # Main loop for annotation
+    for idx, column_pair in enumerate(array_columns):
+        idx0, idx1 = column_pair
+        y0 = filtered_y_data[idx0]
+        y1 = filtered_y_data[idx1]
+        
+        if test_type == 'ttest_ind':
+            tstat, pvalue = stats.ttest_ind(y0, y1, equal_var=False)
         elif test_type == 'ttest_rel':
-            pvalue = stats.ttest_rel(
-                fig_dict['data'][data_pair[0]]['y'],
-                fig_dict['data'][data_pair[1]]['y'],
-            )[1]
+            tstat, pvalue = stats.ttest_rel(y0, y1)
         elif test_type == 'ranksums':
-            pvalue = stats.ranksums(
-                fig_dict['data'][data_pair[0]]['y'],
-                fig_dict['data'][data_pair[1]]['y'],
-            )[1]
-       
-            
-        if pvalue >= 0.05:
-            symbol = f'ns <br>{round(pvalue, 3)}'
-        elif pvalue >= 0.01: 
-            symbol = f'* <br>{round(pvalue, 3)}'
-        elif pvalue >= 0.001:
-            symbol = f'** <br>{round(pvalue, 3)}'
-        else:
-            symbol = f'*** <br>{round(pvalue, 3)}'
-        # Vertical line
-        fig.add_shape(type="line",
-            xref="x"+subplot_str, yref="y"+subplot_str+" domain",
-            x0=column_pair[0], y0=y_range[index][0], 
-            x1=column_pair[0], y1=y_range[index][1],
-            line=dict(color=_format['color'], width=2,)
-        )
-        # Horizontal line
-        fig.add_shape(type="line",
-            xref="x"+subplot_str, yref="y"+subplot_str+" domain",
-            x0=column_pair[0], y0=y_range[index][1], 
-            x1=column_pair[1], y1=y_range[index][1],
-            line=dict(color=_format['color'], width=2,)
-        )
-        # Vertical line
-        fig.add_shape(type="line",
-            xref="x"+subplot_str, yref="y"+subplot_str+" domain",
-            x0=column_pair[1], y0=y_range[index][0], 
-            x1=column_pair[1], y1=y_range[index][1],
-            line=dict(color=_format['color'], width=2,)
-        )
-        
-        # If just_annotate (manual annotations) hard overwrites calculated stats in this function. Merely provides a 'symbol' to annotate
-        if just_annotate is not None: 
-            symbol = just_annotate[index]
-        
-        ## add text at the correct x, y coordinates
-        ## for bars, there is a direct mapping from the bar number to 0, 1, 2...
-        fig.add_annotation(dict(font=dict(color=_format['color'],size=14),
-            x=(column_pair[0] + column_pair[1])/2,
-            y=y_range[index][1]*_format['text_height'],
+            tstat, pvalue = stats.ranksums(y0, y1)
+        elif test_type == 'ttest_1samp':
+            tstat, pvalue = stats.ttest_1samp(y0, popmean=popmean)
+
+        # Symbol formatting
+        symbol = just_annotate[idx] if just_annotate else format_pvalue(pvalue, p_round, tstat if include_tstat else None, show)
+
+        # Draw lines only if different
+        if idx0 != idx1:
+            for x in [idx0, idx1]:
+                fig.add_shape(type="line",
+                    xref="x"+subplot_str, yref="y"+subplot_str+" domain",
+                    x0=x, y0=y_range[idx][0]*_format['text_height'],
+                    x1=x, y1=y_range[idx][1]*_format['text_height'],
+                    line=dict(color=_format['color'], width=2)
+                )
+            fig.add_shape(type="line",
+                xref="x"+subplot_str, yref="y"+subplot_str+" domain",
+                x0=idx0, y0=y_range[idx][1]*_format['text_height'],
+                x1=idx1, y1=y_range[idx][1]*_format['text_height'],
+                line=dict(color=_format['color'], width=2)
+            )
+
+        fig.add_annotation(dict(
+            font=dict(color=_format['color'], size=font_size),
+            x=(idx0 + idx1)/2,
+            y=y_range[idx][1]*(_format['text_height']+.07),
             showarrow=False,
             text=symbol,
             textangle=0,
@@ -251,6 +227,51 @@ def add_p_value_annotation(fig,
             yref="y"+subplot_str+" domain"
         ))
     return fig
+
+def format_pvalue(pvalue, p_round=3, t=None, show=None):
+    """
+    Format a p-value as a string with significance symbols.
+
+    Parameters:
+    pvalue (float): The p-value to be formatted.
+    p_round (int): Number of digits to show in scientific notation.
+    t (float, optional): Optional t-statistic to include.
+    show (str or None): 
+        If 'symbol', returns only the significance label (e.g. '*').
+        If 'pvalue', returns only the formatted p-value (e.g. 'p=1.23e-03').
+        If None, returns full string with significance and p-value (and t if provided).
+
+    Returns:
+    str: The formatted p-value string.
+    """
+    
+    # Choose significance symbol
+    if np.isnan(pvalue): 
+        symbol_part= ''
+    elif pvalue >= 0.05:
+        symbol_part = 'ns'
+    elif pvalue >= 0.01:
+        symbol_part = '*'
+    elif pvalue >= 0.001:
+        symbol_part = '**'
+    else:
+        symbol_part = '***'
+    
+    # Format p-value using scientific notation
+    pval_part = f'p={pvalue:.{p_round}e}'
+    
+    # Handle return based on return_part
+    if show == 'symbol':
+        return symbol_part
+    elif show == 'pvalue':
+        return pval_part
+    
+    # Default: full output
+    symbol = f'{symbol_part} <br>{pval_part}'
+    if t is not None:
+        symbol += f'<br>t={round(t, 3)}'
+    
+    return symbol
 
 
 
